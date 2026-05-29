@@ -99,9 +99,11 @@ def crear_lotes_desde_orden(orden):
         orden = orden.__class__.objects.select_for_update().prefetch_related('detalles__producto').get(pk=orden.pk)
         if orden.estado != orden.Estado.RECIBIDA:
             return lotes
-        if Lote.objects.filter(orden_compra=orden).exists():
+        if not orden.detalles.exists():
             return lotes
         for detalle in orden.detalles.all():
+            if Lote.objects.filter(orden_compra=orden, producto=detalle.producto).exists():
+                continue
             lotes.append(
                 Lote.objects.create(
                     producto=detalle.producto,
