@@ -153,39 +153,40 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
         read_only_fields = ['numero', 'creado_por']
 
     def validate_detalles(self, detalles):
-        if not detalles and (not self.instance or self.instance.estado == NotaDespacho.Estado.BORRADOR):
+        confirmando_despacho = (
+            self.instance
+            and self.partial
+            and self.instance.estado == NotaDespacho.Estado.BORRADOR
+            and self.initial_data.get('estado') == NotaDespacho.Estado.DESPACHADO
+            and self.instance.detalles.exists()
+        )
+        if (
+            not detalles
+            and not confirmando_despacho
+            and (not self.instance or self.instance.estado == NotaDespacho.Estado.BORRADOR)
+        ):
             raise serializers.ValidationError('Debe ingresar al menos un detalle.')
         return detalles
 
-    def _validar_stock_para_despacho(self, detalles):
-        cantidades_por_producto = {}
-        productos = {}
-        for detalle in detalles:
-            producto = detalle['producto'] if isinstance(detalle, dict) else detalle.producto
-            cantidad = detalle['cantidad'] if isinstance(detalle, dict) else detalle.cantidad
-            productos[producto.pk] = producto
-            cantidades_por_producto[producto.pk] = cantidades_por_producto.get(producto.pk, Decimal('0.000')) + cantidad
-
-        disponibles = {
-            item['producto']: item['total'] or Decimal('0.000')
-            for item in Lote.objects.filter(
-                producto_id__in=cantidades_por_producto.keys(),
-                activo=True,
-                cantidad_disponible__gt=0,
-            ).values('producto').annotate(total=Sum('cantidad_disponible'))
-        }
-
+    def _validar_stock_para_despacho(self, nota):
         errores = []
-        for producto_id, requerido in cantidades_por_producto.items():
-            disponible = disponibles.get(producto_id, Decimal('0.000'))
-            if disponible < requerido:
-                producto = productos[producto_id]
+        for detalle in nota.detalles.select_related('producto__unidad_medida').all():
+            disponible = (
+                Lote.objects.filter(producto=detalle.producto, activo=True)
+                .aggregate(t=Sum('cantidad_disponible'))['t']
+                or Decimal('0.000')
+            )
+            if disponible < detalle.cantidad:
                 errores.append(
-                    f'Stock insuficiente para {producto.nombre}. Disponible: {disponible}, requerido: {requerido}.'
+                    f'{detalle.producto.nombre}: disponible {disponible} '
+                    f'{detalle.producto.unidad_medida.abreviatura}, '
+                    f'requerido {detalle.cantidad} '
+                    f'{detalle.producto.unidad_medida.abreviatura}.'
                 )
-
         if errores:
-            raise serializers.ValidationError({'detalles': errores})
+            raise serializers.ValidationError({
+                'stock': errores
+            })
 
     def validate(self, attrs):
         estado_actual = self.instance.estado if self.instance else NotaDespacho.Estado.BORRADOR
@@ -208,11 +209,10 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
                     'detalles': 'No se pueden modificar los detalles de una nota que ya no está en borrador.'
                 })
 
-        if nuevo_estado == NotaDespacho.Estado.DESPACHADO and nuevo_estado != estado_actual:
-            detalles = attrs.get('detalles')
-            if detalles is None and self.instance:
-                detalles = self.instance.detalles.select_related('producto').all()
-            self._validar_stock_para_despacho(detalles or [])
+        if (self.instance
+                and nuevo_estado == NotaDespacho.Estado.DESPACHADO
+                and estado_actual != NotaDespacho.Estado.DESPACHADO):
+            self._validar_stock_para_despacho(self.instance)
         return attrs
 
     @transaction.atomic
