@@ -13,7 +13,7 @@ from inventario.models import (
     Producto,
     UnidadMedida,
 )
-from inventario.services import crear_lotes_desde_orden, generar_numero_nd, generar_numero_oc, procesar_despacho_fifo
+from inventario.services import generar_numero_nd, generar_numero_oc
 
 
 class CategoriaSerializer(serializers.ModelSerializer):
@@ -94,8 +94,6 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
         orden = OrdenCompra.objects.create(**validated_data)
         for detalle_data in detalles_data:
             DetalleOrdenCompra.objects.create(orden=orden, **detalle_data)
-        if orden.estado == OrdenCompra.Estado.RECIBIDA:
-            crear_lotes_desde_orden(orden)
         return orden
 
     @transaction.atomic
@@ -187,8 +185,6 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
         despacho = NotaDespacho.objects.create(**validated_data)
         for detalle_data in detalles_data:
             DetalleDespacho.objects.create(despacho=despacho, **detalle_data)
-        if despacho.estado == NotaDespacho.Estado.DESPACHADO:
-            procesar_despacho_fifo(despacho)
         return despacho
 
     @transaction.atomic

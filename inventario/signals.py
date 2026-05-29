@@ -1,7 +1,8 @@
+from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from inventario.models import AjusteMerma, Lote, NotaDespacho, OrdenCompra
+from inventario.models import AjusteMerma, DetalleOrdenCompra, Lote, NotaDespacho, OrdenCompra
 from inventario.services import crear_lotes_desde_orden, procesar_despacho_fifo, procesar_merma_fifo, recalcular_stock_producto
 
 
@@ -17,7 +18,13 @@ def recordar_estado_anterior_orden(sender, instance, **kwargs):
 def crear_lotes_al_recibir_orden(sender, instance, created, **kwargs):
     estado_anterior = getattr(instance, '_estado_anterior', None)
     if instance.estado == OrdenCompra.Estado.RECIBIDA and estado_anterior != OrdenCompra.Estado.RECIBIDA:
-        crear_lotes_desde_orden(instance)
+        transaction.on_commit(lambda: crear_lotes_desde_orden(instance))
+
+
+@receiver(post_save, sender=DetalleOrdenCompra)
+def crear_lotes_al_guardar_detalle(sender, instance, created, **kwargs):
+    if instance.orden.estado == OrdenCompra.Estado.RECIBIDA:
+        crear_lotes_desde_orden(instance.orden)
 
 
 @receiver(pre_save, sender=NotaDespacho)
@@ -32,7 +39,7 @@ def recordar_estado_anterior_despacho(sender, instance, **kwargs):
 def descontar_stock_al_despachar(sender, instance, created, **kwargs):
     estado_anterior = getattr(instance, '_estado_anterior', None)
     if instance.estado == NotaDespacho.Estado.DESPACHADO and estado_anterior != NotaDespacho.Estado.DESPACHADO:
-        procesar_despacho_fifo(instance)
+        transaction.on_commit(lambda: procesar_despacho_fifo(instance))
 
 
 @receiver(post_save, sender=AjusteMerma)
