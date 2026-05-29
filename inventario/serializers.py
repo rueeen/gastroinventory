@@ -59,25 +59,30 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
         read_only_fields = ['numero', 'creado_por', 'creado_en']
 
     def validate_detalles(self, detalles):
-        if not detalles:
+        if not detalles and (not self.instance or self.instance.estado == OrdenCompra.Estado.BORRADOR):
             raise serializers.ValidationError('Debe ingresar al menos un detalle.')
         return detalles
 
     def validate(self, attrs):
-        attrs = super().validate(attrs)
-        nuevo_estado = attrs.get('estado')
-        if self.instance is None or nuevo_estado is None or nuevo_estado == self.instance.estado:
-            return attrs
-
-        transiciones_validas = {
-            OrdenCompra.Estado.BORRADOR: {OrdenCompra.Estado.RECIBIDA, OrdenCompra.Estado.ANULADA},
-            OrdenCompra.Estado.RECIBIDA: set(),
-            OrdenCompra.Estado.ANULADA: set(),
-        }
-        if nuevo_estado not in transiciones_validas[self.instance.estado]:
-            raise serializers.ValidationError({
-                'estado': f'No se puede cambiar una orden de compra de {self.instance.estado} a {nuevo_estado}.',
-            })
+        if self.instance:
+            estado_actual = self.instance.estado
+            nuevo_estado = attrs.get('estado', estado_actual)
+            transiciones_validas = {
+                OrdenCompra.Estado.BORRADOR: [
+                    OrdenCompra.Estado.RECIBIDA,
+                    OrdenCompra.Estado.ANULADA,
+                ],
+                OrdenCompra.Estado.RECIBIDA: [],
+                OrdenCompra.Estado.ANULADA: [],
+            }
+            if nuevo_estado != estado_actual and nuevo_estado not in transiciones_validas.get(estado_actual, []):
+                raise serializers.ValidationError({
+                    'estado': f'No se puede cambiar el estado de {estado_actual} a {nuevo_estado}.'
+                })
+            if 'detalles' in attrs and estado_actual != OrdenCompra.Estado.BORRADOR:
+                raise serializers.ValidationError({
+                    'detalles': 'No se pueden modificar los detalles de una orden que ya no está en borrador.'
+                })
         return attrs
 
     @transaction.atomic
@@ -145,25 +150,30 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
         read_only_fields = ['numero', 'creado_por']
 
     def validate_detalles(self, detalles):
-        if not detalles:
+        if not detalles and (not self.instance or self.instance.estado == NotaDespacho.Estado.BORRADOR):
             raise serializers.ValidationError('Debe ingresar al menos un detalle.')
         return detalles
 
     def validate(self, attrs):
-        attrs = super().validate(attrs)
-        nuevo_estado = attrs.get('estado')
-        if self.instance is None or nuevo_estado is None or nuevo_estado == self.instance.estado:
-            return attrs
-
-        transiciones_validas = {
-            NotaDespacho.Estado.BORRADOR: {NotaDespacho.Estado.DESPACHADO, NotaDespacho.Estado.ANULADO},
-            NotaDespacho.Estado.DESPACHADO: set(),
-            NotaDespacho.Estado.ANULADO: set(),
-        }
-        if nuevo_estado not in transiciones_validas[self.instance.estado]:
-            raise serializers.ValidationError({
-                'estado': f'No se puede cambiar una nota de despacho de {self.instance.estado} a {nuevo_estado}.',
-            })
+        if self.instance:
+            estado_actual = self.instance.estado
+            nuevo_estado = attrs.get('estado', estado_actual)
+            transiciones_validas = {
+                NotaDespacho.Estado.BORRADOR: [
+                    NotaDespacho.Estado.DESPACHADO,
+                    NotaDespacho.Estado.ANULADO,
+                ],
+                NotaDespacho.Estado.DESPACHADO: [],
+                NotaDespacho.Estado.ANULADO: [],
+            }
+            if nuevo_estado != estado_actual and nuevo_estado not in transiciones_validas.get(estado_actual, []):
+                raise serializers.ValidationError({
+                    'estado': f'No se puede cambiar el estado de {estado_actual} a {nuevo_estado}.'
+                })
+            if 'detalles' in attrs and estado_actual != NotaDespacho.Estado.BORRADOR:
+                raise serializers.ValidationError({
+                    'detalles': 'No se pueden modificar los detalles de una nota que ya no está en borrador.'
+                })
         return attrs
 
     @transaction.atomic
