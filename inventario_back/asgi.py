@@ -1,5 +1,5 @@
 """
-ASGI config for gastroinventory project.
+ASGI config for inventario_back project.
 
 It exposes the ASGI callable as a module-level variable named ``application``.
 
@@ -11,6 +11,6 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gastroinventory.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'inventario_back.settings')
 
 application = get_asgi_application()
