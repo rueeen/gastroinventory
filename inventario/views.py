@@ -221,7 +221,7 @@ class AjusteMermaViewSet(viewsets.ModelViewSet):
 
 
 @api_view(['GET'])
-@permission_classes([EsAdministrador])
+@permission_classes([EsAdminOBodeguero])
 def dashboard_resumen(request):
     hoy = timezone.localdate()
     data = {
