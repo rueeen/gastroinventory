@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from django.contrib.contenttypes.models import ContentType
@@ -6,6 +7,8 @@ from django.db.models import Sum
 from django.template.loader import render_to_string
 from django.utils import timezone
 from weasyprint import HTML
+
+logger = logging.getLogger(__name__)
 
 
 def generar_numero_documento(tipo: str) -> str:
@@ -120,27 +123,41 @@ def crear_lotes_desde_orden(orden):
 def procesar_despacho_fifo(despacho):
     from inventario.models import MovimientoLote
 
-    movimientos = []
-    with transaction.atomic():
-        despacho = despacho.__class__.objects.select_for_update().prefetch_related('detalles__producto').get(pk=despacho.pk)
-        if despacho.estado != despacho.Estado.DESPACHADO:
-            return movimientos
-        for detalle in despacho.detalles.all():
-            if MovimientoLote.objects.filter(
-                content_type=ContentType.objects.get_for_model(detalle, for_concrete_model=False),
-                object_id=detalle.pk,
-            ).exists():
-                continue
-            movimientos.extend(
-                descontar_stock_fifo(
-                    producto=detalle.producto,
-                    cantidad=detalle.cantidad,
-                    tipo=MovimientoLote.Tipo.DESPACHO,
-                    registrado_por=despacho.creado_por,
-                    referencia_obj=detalle,
-                )
+    try:
+        movimientos = []
+        with transaction.atomic():
+            despacho = (
+                despacho.__class__.objects.select_for_update()
+                .prefetch_related('detalles__producto')
+                .get(pk=despacho.pk)
             )
-    return movimientos
+            if despacho.estado != despacho.Estado.DESPACHADO:
+                return movimientos
+            for detalle in despacho.detalles.all():
+                if MovimientoLote.objects.filter(
+                    content_type=ContentType.objects.get_for_model(
+                        detalle,
+                        for_concrete_model=False,
+                    ),
+                    object_id=detalle.pk,
+                ).exists():
+                    continue
+                movimientos.extend(
+                    descontar_stock_fifo(
+                        producto=detalle.producto,
+                        cantidad=detalle.cantidad,
+                        tipo=MovimientoLote.Tipo.DESPACHO,
+                        registrado_por=despacho.creado_por,
+                        referencia_obj=detalle,
+                    )
+                )
+        return movimientos
+    except ValueError:
+        logger.exception(
+            'No se pudo procesar el despacho FIFO para la nota %s.',
+            getattr(despacho, 'pk', None),
+        )
+        return []
 
 
 def procesar_merma_fifo(merma):
