@@ -13,7 +13,7 @@ from inventario.models import (
     Producto,
     UnidadMedida,
 )
-from inventario.services import generar_numero_nd, generar_numero_oc, procesar_despacho_fifo
+from inventario.services import generar_numero_nd, generar_numero_oc
 
 
 class CategoriaSerializer(serializers.ModelSerializer):
@@ -62,6 +62,23 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
         if not detalles:
             raise serializers.ValidationError('Debe ingresar al menos un detalle.')
         return detalles
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        nuevo_estado = attrs.get('estado')
+        if self.instance is None or nuevo_estado is None or nuevo_estado == self.instance.estado:
+            return attrs
+
+        transiciones_validas = {
+            OrdenCompra.Estado.BORRADOR: {OrdenCompra.Estado.RECIBIDA, OrdenCompra.Estado.ANULADA},
+            OrdenCompra.Estado.RECIBIDA: set(),
+            OrdenCompra.Estado.ANULADA: set(),
+        }
+        if nuevo_estado not in transiciones_validas[self.instance.estado]:
+            raise serializers.ValidationError({
+                'estado': f'No se puede cambiar una orden de compra de {self.instance.estado} a {nuevo_estado}.',
+            })
+        return attrs
 
     @transaction.atomic
     def create(self, validated_data):
@@ -132,6 +149,23 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Debe ingresar al menos un detalle.')
         return detalles
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        nuevo_estado = attrs.get('estado')
+        if self.instance is None or nuevo_estado is None or nuevo_estado == self.instance.estado:
+            return attrs
+
+        transiciones_validas = {
+            NotaDespacho.Estado.BORRADOR: {NotaDespacho.Estado.DESPACHADO, NotaDespacho.Estado.ANULADO},
+            NotaDespacho.Estado.DESPACHADO: set(),
+            NotaDespacho.Estado.ANULADO: set(),
+        }
+        if nuevo_estado not in transiciones_validas[self.instance.estado]:
+            raise serializers.ValidationError({
+                'estado': f'No se puede cambiar una nota de despacho de {self.instance.estado} a {nuevo_estado}.',
+            })
+        return attrs
+
     @transaction.atomic
     def create(self, validated_data):
         detalles_data = validated_data.pop('detalles')
@@ -141,8 +175,6 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
         despacho = NotaDespacho.objects.create(**validated_data)
         for detalle_data in detalles_data:
             DetalleDespacho.objects.create(despacho=despacho, **detalle_data)
-        if despacho.estado == NotaDespacho.Estado.DESPACHADO:
-            procesar_despacho_fifo(despacho)
         return despacho
 
     @transaction.atomic
