@@ -1,0 +1,11 @@
+Django>=5.0
+djangorestframework>=3.15
+djangorestframework-simplejwt
+django-cors-headers
+django-crispy-forms
+crispy-bootstrap5
+django-simple-history
+python-decouple
+psycopg2-binary
+WeasyPrint
+pillow
