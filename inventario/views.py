@@ -110,7 +110,24 @@ class OrdenCompraViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def pdf(self, request, pk=None):
         orden = self.get_object()
-        pdf_file = generar_pdf('inventario/orden_compra_pdf.html', {'orden': orden})
+        detalles = orden.detalles.select_related('producto__unidad_medida').all()
+        detalles_con_subtotal = [
+            {
+                'producto_nombre': d.producto.nombre,
+                'unidad_abreviatura': d.producto.unidad_medida.abreviatura,
+                'cantidad': d.cantidad,
+                'precio_unitario': d.precio_unitario,
+                'subtotal': d.cantidad * d.precio_unitario,
+            }
+            for d in detalles
+        ]
+        total_general = sum(item['subtotal'] for item in detalles_con_subtotal)
+        context = {
+            'orden': orden,
+            'detalles_con_subtotal': detalles_con_subtotal,
+            'total_general': total_general,
+        }
+        pdf_file = generar_pdf('inventario/orden_compra_pdf.html', context)
         response = HttpResponse(pdf_file, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{orden.numero}.pdf"'
         return response
