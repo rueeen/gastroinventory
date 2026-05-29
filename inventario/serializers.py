@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from django.db import transaction
+from django.db.models import Sum
 from rest_framework import serializers
 
 from inventario.models import (
@@ -154,10 +157,40 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Debe ingresar al menos un detalle.')
         return detalles
 
+    def _validar_stock_para_despacho(self, detalles):
+        cantidades_por_producto = {}
+        productos = {}
+        for detalle in detalles:
+            producto = detalle['producto'] if isinstance(detalle, dict) else detalle.producto
+            cantidad = detalle['cantidad'] if isinstance(detalle, dict) else detalle.cantidad
+            productos[producto.pk] = producto
+            cantidades_por_producto[producto.pk] = cantidades_por_producto.get(producto.pk, Decimal('0.000')) + cantidad
+
+        disponibles = {
+            item['producto']: item['total'] or Decimal('0.000')
+            for item in Lote.objects.filter(
+                producto_id__in=cantidades_por_producto.keys(),
+                activo=True,
+                cantidad_disponible__gt=0,
+            ).values('producto').annotate(total=Sum('cantidad_disponible'))
+        }
+
+        errores = []
+        for producto_id, requerido in cantidades_por_producto.items():
+            disponible = disponibles.get(producto_id, Decimal('0.000'))
+            if disponible < requerido:
+                producto = productos[producto_id]
+                errores.append(
+                    f'Stock insuficiente para {producto.nombre}. Disponible: {disponible}, requerido: {requerido}.'
+                )
+
+        if errores:
+            raise serializers.ValidationError({'detalles': errores})
+
     def validate(self, attrs):
+        estado_actual = self.instance.estado if self.instance else NotaDespacho.Estado.BORRADOR
+        nuevo_estado = attrs.get('estado', estado_actual)
         if self.instance:
-            estado_actual = self.instance.estado
-            nuevo_estado = attrs.get('estado', estado_actual)
             transiciones_validas = {
                 NotaDespacho.Estado.BORRADOR: [
                     NotaDespacho.Estado.DESPACHADO,
@@ -174,6 +207,12 @@ class NotaDespachoSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'detalles': 'No se pueden modificar los detalles de una nota que ya no está en borrador.'
                 })
+
+        if nuevo_estado == NotaDespacho.Estado.DESPACHADO and nuevo_estado != estado_actual:
+            detalles = attrs.get('detalles')
+            if detalles is None and self.instance:
+                detalles = self.instance.detalles.select_related('producto').all()
+            self._validar_stock_para_despacho(detalles or [])
         return attrs
 
     @transaction.atomic

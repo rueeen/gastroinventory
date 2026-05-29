@@ -32,13 +32,13 @@ def generar_numero_nd() -> str:
 
 
 def recalcular_stock_producto(producto):
-    from inventario.models import Lote, Producto
+    from inventario.models import Lote
 
     total = Lote.objects.filter(producto=producto, activo=True).aggregate(
         total=Sum('cantidad_disponible'),
     )['total'] or Decimal('0.000')
-    Producto.objects.filter(pk=producto.pk).update(stock_actual=total)
     producto.stock_actual = total
+    producto.save(update_fields=['stock_actual'])
     return total
 
 
