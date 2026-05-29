@@ -64,6 +64,22 @@ class OrdenCompraSerializer(serializers.ModelSerializer):
     def validate_detalles(self, detalles):
         if not detalles and (not self.instance or self.instance.estado == OrdenCompra.Estado.BORRADOR):
             raise serializers.ValidationError('Debe ingresar al menos un detalle.')
+
+        productos_vistos = set()
+        productos_duplicados = []
+        for detalle in detalles:
+            producto = detalle.get('producto')
+            producto_id = getattr(producto, 'pk', producto)
+            if producto_id in productos_vistos:
+                productos_duplicados.append(getattr(producto, 'nombre', str(producto)))
+            productos_vistos.add(producto_id)
+
+        if productos_duplicados:
+            raise serializers.ValidationError(
+                'No puede repetir productos en los detalles de la orden de compra: ' +
+                ', '.join(productos_duplicados) + '.'
+            )
+
         return detalles
 
     def validate(self, attrs):

@@ -18,7 +18,7 @@ def recordar_estado_anterior_orden(sender, instance, **kwargs):
 def crear_lotes_al_recibir_orden(sender, instance, created, **kwargs):
     estado_anterior = getattr(instance, '_estado_anterior', None)
     if instance.estado == OrdenCompra.Estado.RECIBIDA and estado_anterior != OrdenCompra.Estado.RECIBIDA:
-        transaction.on_commit(lambda: crear_lotes_desde_orden(instance))
+        transaction.on_commit(lambda: crear_lotes_desde_orden(instance), robust=True)
 
 
 @receiver(post_save, sender=DetalleOrdenCompra)
@@ -39,7 +39,7 @@ def recordar_estado_anterior_despacho(sender, instance, **kwargs):
 def descontar_stock_al_despachar(sender, instance, created, **kwargs):
     estado_anterior = getattr(instance, '_estado_anterior', None)
     if instance.estado == NotaDespacho.Estado.DESPACHADO and estado_anterior != NotaDespacho.Estado.DESPACHADO:
-        transaction.on_commit(lambda: procesar_despacho_fifo(instance))
+        transaction.on_commit(lambda: procesar_despacho_fifo(instance), robust=True)
 
 
 @receiver(post_save, sender=AjusteMerma)
